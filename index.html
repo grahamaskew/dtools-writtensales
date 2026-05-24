@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D-Tools Report — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="login-wrap">
+  <div class="login-card">
+
+    <!-- Navy hero banner -->
+    <div class="login-hero">
+      <div class="login-hero-eyebrow">
+        <div class="login-hero-icon">
+          <!-- D-Tools chart icon -->
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2DD4BF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+        </div>
+        <div class="login-hero-label" id="hero-category">Estimating Tool</div>
+      </div>
+      <div class="login-hero-title" id="hero-title">D-Tools Report</div>
+      <div class="login-hero-sub" id="hero-sub">Approved Estimates</div>
+    </div>
+
+    <!-- White form area -->
+    <div class="login-form">
+      <div class="login-intro">Sign in to access your estimates report.</div>
+
+      <div id="login-error" class="login-error"></div>
+
+      <form id="login-form" novalidate>
+        <div class="login-field">
+          <div class="login-field-label">Email Address</div>
+          <input
+            type="email"
+            id="email"
+            placeholder="you@company.com"
+            autocomplete="email"
+            required
+          />
+        </div>
+
+        <div class="login-field">
+          <div class="login-field-label">Password</div>
+          <div class="pw-wrap">
+            <input
+              type="password"
+              id="password"
+              placeholder="••••••••"
+              autocomplete="current-password"
+              required
+            />
+            <button type="button" class="pw-toggle" id="pw-toggle" aria-label="Show/hide password">
+              <!-- Eye icon -->
+              <svg id="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="login-btn" id="submit-btn">Sign In</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+
+<!-- Config -->
+<script src="js/config.js"></script>
+
+<!-- Firebase SDK (modular, from CDN) -->
+<script type="module">
+  import { initializeApp }                                from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getAuth, signInWithEmailAndPassword, onAuthStateChanged }
+    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+  import { getFirestore, doc, getDoc }
+    from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  // ── Apply branding from config ──────────────────────────
+  document.getElementById('hero-category').textContent = APP_CONFIG.appCategory  || 'Estimating Tool';
+  document.getElementById('hero-title').textContent    = APP_CONFIG.appName      || 'D-Tools Report';
+  document.getElementById('hero-sub').textContent      = APP_CONFIG.appSubtitle  || 'Approved Estimates';
+  document.title = (APP_CONFIG.appName || 'D-Tools Report') + ' — Sign In';
+
+  // ── Firebase init ───────────────────────────────────────
+  const app  = initializeApp(APP_CONFIG.firebase);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  // Redirect already-signed-in users
+  onAuthStateChanged(auth, async user => {
+    if (user) {
+      await redirectUser(user);
+    }
+  });
+
+  // ── Password show/hide ──────────────────────────────────
+  document.getElementById('pw-toggle').addEventListener('click', () => {
+    const input = document.getElementById('password');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+
+  // ── Login form submit ───────────────────────────────────
+  document.getElementById('login-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const errorEl = document.getElementById('login-error');
+    const btn     = document.getElementById('submit-btn');
+
+    errorEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Signing in…';
+
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await redirectUser(cred.user);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      errorEl.textContent = friendlyError(err.code);
+    }
+  });
+
+  // ── Routing: setup or app ───────────────────────────────
+  async function redirectUser(user) {
+    try {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      if (snap.exists() && snap.data().apiType && snap.data().apiKey) {
+        window.location.href = 'app.html';
+      } else {
+        window.location.href = 'setup.html';
+      }
+    } catch {
+      window.location.href = 'setup.html';
+    }
+  }
+
+  function friendlyError(code) {
+    switch (code) {
+      case 'auth/invalid-email':         return 'Please enter a valid email address.';
+      case 'auth/user-not-found':        return 'No account found for that email address.';
+      case 'auth/wrong-password':        return 'Incorrect password. Please try again.';
+      case 'auth/invalid-credential':    return 'Incorrect email or password. Please try again.';
+      case 'auth/too-many-requests':     return 'Too many attempts. Please wait a moment and try again.';
+      case 'auth/network-request-failed':return 'Network error. Please check your connection.';
+      default:                           return 'Sign in failed. Please try again.';
+    }
+  }
+</script>
+
+</body>
+</html>

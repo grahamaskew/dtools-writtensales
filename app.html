@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D-Tools Report — Approved Estimates</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- ── Topbar ─────────────────────────────────────────────── -->
+<div class="app-topbar screen-only">
+  <div class="app-topbar-inner">
+
+    <div class="app-header">
+      <div class="app-header-left">
+        <div>
+          <div class="app-title" id="header-title">D-Tools Report</div>
+          <div class="app-sub" id="header-sub">Approved Estimates</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="header-user" id="header-user"></span>
+        <!-- Settings icon -->
+        <a href="setup.html" class="btn-ghost-navy btn-sm" title="API Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Settings
+        </a>
+        <button class="btn-ghost-navy btn-sm" id="signout-btn">Sign Out</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Main content ────────────────────────────────────────── -->
+<div class="app">
+
+  <!-- Mock mode notice -->
+  <div id="mock-notice" class="mock-notice" style="display:none;">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <div>
+      <strong>Test Mode Active</strong> — Using built-in mock data. No D-Tools API connection required.
+      Use date range <strong>01 Jan 2026 – 31 Mar 2026</strong> to see the full test results,
+      or try dates outside this range to confirm the filter is working correctly.
+    </div>
+  </div>
+
+  <!-- Search panel -->
+  <div class="section">
+    <div class="section-title">Search</div>
+
+    <div class="search-row">
+      <div class="form-group">
+        <div class="field-label">Start Date</div>
+        <input type="date" id="start-date" />
+      </div>
+      <div class="form-group">
+        <div class="field-label">End Date</div>
+        <input type="date" id="end-date" />
+      </div>
+      <div class="form-group">
+        <!-- Spacer for label height alignment -->
+        <div class="field-label" style="visibility:hidden;">Search</div>
+        <button class="btn-primary" id="search-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          Search
+        </button>
+      </div>
+    </div>
+
+    <div id="search-error" class="alert-error" style="margin-top: 0.75rem;"></div>
+  </div>
+
+  <!-- KPI summary (shown after search) -->
+  <div id="kpi-row" class="metric-cards" style="display:none;">
+    <div class="metric-card primary">
+      <div class="mc-label">Total Approved</div>
+      <div class="mc-value" id="kpi-total">$0</div>
+      <div class="mc-sub" id="kpi-period">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-label">Clients</div>
+      <div class="mc-value" id="kpi-clients">0</div>
+      <div class="mc-sub">with approved items</div>
+    </div>
+    <div class="metric-card">
+      <div class="mc-label">Records</div>
+      <div class="mc-value" id="kpi-records">0</div>
+      <div class="mc-sub">estimates &amp; change orders</div>
+    </div>
+  </div>
+
+  <!-- Results section -->
+  <div class="section" id="results-section">
+
+    <!-- Initial empty state -->
+    <div id="state-initial" class="state-box">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M9 21V9"/>
+      </svg>
+      <p>Enter a date range and click Search</p>
+      <div class="state-hint">Results will appear here</div>
+    </div>
+
+    <!-- Loading state -->
+    <div id="state-loading" class="state-box" style="display:none;">
+      <div class="spinner"></div>
+      <p>Fetching approved estimates…</p>
+    </div>
+
+    <!-- No results state -->
+    <div id="state-empty" class="state-box" style="display:none;">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
+      </svg>
+      <p>No approved estimates found</p>
+      <div class="state-hint" id="empty-hint">No estimates or change orders had their status changed to Approved / Accepted in this period.</div>
+    </div>
+
+    <!-- Results toolbar + table (shown when there are results) -->
+    <div id="state-results" style="display:none;">
+
+      <div class="results-toolbar">
+        <div class="section-title" style="margin-bottom:0;" id="results-label">Results</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span id="mock-badge" class="mock-badge" style="display:none;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            MOCK DATA
+          </span>
+          <button class="btn btn-sm" id="export-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Estimate / Change Order</th>
+              <th>Type</th>
+              <th class="col-date">Approved Date</th>
+              <th class="col-amount">Total</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+
+    </div><!-- /state-results -->
+  </div><!-- /results-section -->
+
+</div><!-- /app -->
+
+<!-- Scripts -->
+<script src="js/config.js"></script>
+<script src="js/mock-data.js"></script>
+<script src="js/api.js"></script>
+
+<script type="module">
+  import { initializeApp }                          from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getAuth, onAuthStateChanged, signOut }   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+  import { getFirestore, doc, getDoc }              from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  const app  = initializeApp(APP_CONFIG.firebase);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  let apiClient = null;
+
+  // ── Branding ─────────────────────────────────────────────
+  document.getElementById('header-title').textContent = APP_CONFIG.appName    || 'D-Tools Report';
+  document.getElementById('header-sub').textContent   = APP_CONFIG.appSubtitle || 'Approved Estimates';
+  document.title = APP_CONFIG.appName || 'D-Tools Report';
+
+  // ── Auth guard ────────────────────────────────────────────
+  onAuthStateChanged(auth, async user => {
+    if (!user) {
+      window.location.href = 'index.html';
+      return;
+    }
+    document.getElementById('header-user').textContent = user.email;
+
+    // Load user's D-Tools config from Firestore
+    let userConfig = { apiType: 'si', apiKey: '' };
+    try {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      if (snap.exists()) userConfig = snap.data();
+      else { window.location.href = 'setup.html'; return; }
+    } catch { window.location.href = 'setup.html'; return; }
+
+    // Initialise API client
+    apiClient = new DToolsAPI({
+      apiType:   userConfig.apiType,
+      apiKey:    userConfig.apiKey,
+      workerUrl: APP_CONFIG.workerUrl,
+      useMock:   APP_CONFIG.useMock
+    });
+
+    // Show mock notice if in mock mode
+    if (APP_CONFIG.useMock) {
+      document.getElementById('mock-notice').style.display = 'flex';
+      document.getElementById('mock-badge').style.display  = 'inline-flex';
+    }
+  });
+
+  // ── Sign out ──────────────────────────────────────────────
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await signOut(auth);
+    window.location.href = 'index.html';
+  });
+
+  // ── Search ────────────────────────────────────────────────
+  document.getElementById('search-btn').addEventListener('click', runSearch);
+
+  // Allow Enter key on date inputs
+  document.getElementById('start-date').addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(); });
+  document.getElementById('end-date').addEventListener('keydown',   e => { if (e.key === 'Enter') runSearch(); });
+
+  async function runSearch() {
+    if (!apiClient) return;
+
+    const errorEl  = document.getElementById('search-error');
+    const startVal = document.getElementById('start-date').value;
+    const endVal   = document.getElementById('end-date').value;
+
+    errorEl.textContent = '';
+
+    if (!startVal || !endVal) {
+      errorEl.textContent = 'Please select both a start date and an end date.';
+      return;
+    }
+    if (startVal > endVal) {
+      errorEl.textContent = 'Start date must be on or before the end date.';
+      return;
+    }
+
+    showState('loading');
+    document.getElementById('kpi-row').style.display    = 'none';
+    document.getElementById('search-btn').disabled       = true;
+    document.getElementById('search-btn').textContent    = 'Searching…';
+
+    try {
+      const records = await apiClient.getApprovedEstimates(startVal, endVal);
+
+      document.getElementById('search-btn').disabled  = false;
+      document.getElementById('search-btn').innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search';
+
+      if (records.length === 0) {
+        showState('empty');
+        document.getElementById('empty-hint').textContent =
+          `No approved estimates or change orders found between ${formatDate(startVal + 'T00:00:00Z')} and ${formatDate(endVal + 'T23:59:59Z')}.`;
+        return;
+      }
+
+      const groups = groupByClient(records);
+      const total  = grandTotal(groups);
+
+      renderKPIs(groups, total, startVal, endVal);
+      renderTable(groups, total);
+      showState('results');
+
+    } catch (err) {
+      document.getElementById('search-btn').disabled  = false;
+      document.getElementById('search-btn').innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Search';
+      errorEl.textContent = 'Search failed: ' + err.message;
+      showState('initial');
+    }
+  }
+
+  // ── Render KPI row ────────────────────────────────────────
+  function renderKPIs(groups, total, startVal, endVal) {
+    const recordCount = groups.reduce((n, g) => n + g.records.length, 0);
+
+    document.getElementById('kpi-total').textContent   = formatCurrency(total);
+    document.getElementById('kpi-clients').textContent = groups.length;
+    document.getElementById('kpi-records').textContent = recordCount;
+    document.getElementById('kpi-period').textContent  =
+      `${formatDate(startVal + 'T00:00:00Z')} – ${formatDate(endVal + 'T23:59:59Z')}`;
+
+    document.getElementById('kpi-row').style.display = 'flex';
+  }
+
+  // ── Render results table ──────────────────────────────────
+  function renderTable(groups, total) {
+    const tbody      = document.getElementById('results-body');
+    const recordCount = groups.reduce((n, g) => n + g.records.length, 0);
+
+    tbody.innerHTML = '';
+
+    groups.forEach(group => {
+      // Client group header row
+      const headerRow = document.createElement('tr');
+      headerRow.className = 'client-group-header';
+      headerRow.innerHTML = `
+        <td colspan="5">${escHtml(group.clientName)}</td>
+      `;
+      tbody.appendChild(headerRow);
+
+      // Data rows
+      group.records.forEach(r => {
+        const row = document.createElement('tr');
+        row.className = 'data-row';
+
+        const typeBadge = r.type === 'change_order'
+          ? `<span class="type-badge type-co">Change Order</span>`
+          : `<span class="type-badge type-estimate">Estimate</span>`;
+
+        const nameDisplay = r.type === 'change_order' && r.changeOrderNumber
+          ? escHtml(r.name)
+          : escHtml(r.name);
+
+        row.innerHTML = `
+          <td style="color:var(--text-faint); font-size:13px;">${escHtml(group.clientName)}</td>
+          <td>${nameDisplay}</td>
+          <td>${typeBadge}</td>
+          <td class="col-date">${formatDate(r.approvalDate)}</td>
+          <td class="col-amount">${formatCurrency(r.totalPrice)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      // Subtotal row
+      const subtotalRow = document.createElement('tr');
+      subtotalRow.className = 'subtotal-row';
+      subtotalRow.innerHTML = `
+        <td colspan="4" class="text-right" style="font-size:12.5px; letter-spacing:.04em; text-transform:uppercase; padding-right:16px;">
+          ${escHtml(group.clientName)} Subtotal
+        </td>
+        <td class="col-amount">${formatCurrency(group.subtotal)}</td>
+      `;
+      tbody.appendChild(subtotalRow);
+    });
+
+    // Grand total row
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'grand-total-row';
+    totalRow.innerHTML = `
+      <td colspan="4" style="letter-spacing:.04em; text-transform:uppercase; font-size:12.5px; padding-right:16px; text-align:right;">
+        Grand Total — ${recordCount} record${recordCount !== 1 ? 's' : ''}, ${groups.length} client${groups.length !== 1 ? 's' : ''}
+      </td>
+      <td class="col-amount" style="font-size:15px;">${formatCurrency(total)}</td>
+    `;
+    tbody.appendChild(totalRow);
+
+    // Update results label
+    document.getElementById('results-label').textContent =
+      `Results — ${groups.length} Client${groups.length !== 1 ? 's' : ''}`;
+  }
+
+  // ── State management ──────────────────────────────────────
+  function showState(name) {
+    ['initial', 'loading', 'empty', 'results'].forEach(s => {
+      document.getElementById('state-' + s).style.display = s === name ? 'block' : 'none';
+    });
+    if (name === 'results') {
+      document.getElementById('state-results').style.display = 'block';
+    }
+  }
+
+  // ── CSV Export ────────────────────────────────────────────
+  document.getElementById('export-btn').addEventListener('click', () => {
+    const rows = document.querySelectorAll('#results-body tr');
+    if (!rows.length) return;
+
+    const startVal = document.getElementById('start-date').value;
+    const endVal   = document.getElementById('end-date').value;
+
+    // Build CSV from the results body
+    const csvRows = [
+      ['Client', 'Estimate / Change Order', 'Type', 'Approved Date', 'Total']
+    ];
+
+    document.querySelectorAll('#results-body tr.data-row').forEach(row => {
+      const cells = row.querySelectorAll('td');
+      csvRows.push([
+        cells[0].textContent.trim(),
+        cells[1].textContent.trim(),
+        cells[2].textContent.trim(),
+        cells[3].textContent.trim(),
+        cells[4].textContent.trim()
+      ]);
+    });
+
+    // Subtotals
+    document.querySelectorAll('#results-body tr.subtotal-row').forEach(row => {
+      const cells = row.querySelectorAll('td');
+      csvRows.push([
+        '', cells[0].textContent.trim(), '', '', cells[1].textContent.trim()
+      ]);
+    });
+
+    // Grand total
+    document.querySelectorAll('#results-body tr.grand-total-row').forEach(row => {
+      const cells = row.querySelectorAll('td');
+      csvRows.push(['', cells[0].textContent.trim(), '', '', cells[1].textContent.trim()]);
+    });
+
+    const csv = csvRows.map(r =>
+      r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `approved-estimates_${startVal}_to_${endVal}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ── Helpers ───────────────────────────────────────────────
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+
+</body>
+</html>

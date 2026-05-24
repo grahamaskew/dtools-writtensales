@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D-Tools Report — API Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- Topbar -->
+<div class="app-topbar screen-only">
+  <div class="app-topbar-inner">
+    <div class="app-header">
+      <div class="app-header-left">
+        <div>
+          <div class="app-title" id="header-title">D-Tools Report</div>
+          <div class="app-sub">API Configuration</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="header-user" id="header-user"></span>
+        <button class="btn-ghost-navy" id="signout-btn">Sign Out</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Page content -->
+<div class="app">
+
+  <div class="section" style="max-width: 520px; margin: 0 auto;">
+    <div class="section-title">D-Tools Connection</div>
+
+    <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 1.25rem;">
+      Select your D-Tools product and enter your API key. This is stored
+      securely and only accessible to your account. You only need to do
+      this once — it will be remembered for future sessions.
+    </p>
+
+    <div id="setup-error"   class="alert-error"></div>
+    <div id="setup-success" class="alert-success"></div>
+
+    <form id="setup-form" novalidate>
+
+      <!-- API Type Selection -->
+      <div class="form-group">
+        <div class="field-label">D-Tools Product</div>
+        <div class="api-type-toggle">
+
+          <label>
+            <input type="radio" name="apiType" value="si" id="type-si" checked />
+            <div class="api-type-card">
+              <div class="api-label">D-Tools SI</div>
+              <div class="api-desc">On-premises or hosted<br/>System Integrator</div>
+            </div>
+          </label>
+
+          <label>
+            <input type="radio" name="apiType" value="cloud" id="type-cloud" />
+            <div class="api-type-card">
+              <div class="api-label">D-Tools Cloud</div>
+              <div class="api-desc">Cloud-hosted<br/>subscription product</div>
+            </div>
+          </label>
+
+        </div>
+      </div>
+
+      <!-- API Key -->
+      <div class="form-group" style="margin-top: 1rem;">
+        <div class="field-label">API Key</div>
+        <div class="pw-wrap">
+          <input
+            type="password"
+            id="api-key"
+            placeholder="Paste your D-Tools API key here"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="pw-toggle" id="key-toggle" aria-label="Show/hide API key">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <div id="key-hint" style="font-size: 11.5px; color: var(--text-faint); margin-top: 5px;">
+          <!-- Hint updates based on selected product -->
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display: flex; gap: 10px; margin-top: 1.25rem; align-items: center;">
+        <button type="submit" class="btn-primary" id="save-btn">Save &amp; Continue</button>
+        <a href="app.html" id="back-link" class="btn" style="display:none;">Back to Report</a>
+      </div>
+
+    </form>
+  </div>
+
+  <!-- Where to find your API key info box -->
+  <div class="section" style="max-width: 520px; margin: 0 auto;">
+    <div class="section-title">Where to Find Your API Key</div>
+    <div id="si-help" style="font-size: 13.5px; color: var(--text-muted); line-height: 1.7;">
+      <strong style="color: var(--text-primary);">D-Tools SI:</strong>
+      In the SI Control Panel, go to
+      <strong>Start → Setup → Control Panel → Manage Integrations</strong>.
+      Generate or copy the API key for your integration.
+      Add it to each request using the header <code>X-DTSI-ApiKey</code>.
+    </div>
+    <div id="cloud-help" style="font-size: 13.5px; color: var(--text-muted); line-height: 1.7; display: none;">
+      <strong style="color: var(--text-primary);">D-Tools Cloud:</strong>
+      Go to <strong>Settings → Integration → Developer → API Keys</strong>
+      inside D-Tools Cloud. Copy the key — it will be sent as the
+      header <code>X-API-Key</code> with each request.
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<script src="js/config.js"></script>
+
+<script type="module">
+  import { initializeApp }                               from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import { getAuth, onAuthStateChanged, signOut }        from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+  import { getFirestore, doc, getDoc, setDoc }           from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  const app  = initializeApp(APP_CONFIG.firebase);
+  const auth = getAuth(app);
+  const db   = getFirestore(app);
+
+  let currentUser = null;
+
+  // ── Branding ────────────────────────────────────────────
+  document.getElementById('header-title').textContent = APP_CONFIG.appName || 'D-Tools Report';
+  document.title = (APP_CONFIG.appName || 'D-Tools Report') + ' — API Setup';
+
+  // ── Auth guard ──────────────────────────────────────────
+  onAuthStateChanged(auth, async user => {
+    if (!user) {
+      window.location.href = 'index.html';
+      return;
+    }
+    currentUser = user;
+    document.getElementById('header-user').textContent = user.email;
+
+    // Pre-fill if user already has config (e.g. returning to update it)
+    try {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.apiType) {
+          document.getElementById('type-' + data.apiType).checked = true;
+          updateHints(data.apiType);
+        }
+        if (data.apiKey) {
+          document.getElementById('api-key').value = data.apiKey;
+        }
+        // Show back link if user already has a valid config
+        if (data.apiType && data.apiKey) {
+          document.getElementById('back-link').style.display = 'inline-flex';
+        }
+      }
+    } catch { /* ignore */ }
+  });
+
+  // ── Sign out ────────────────────────────────────────────
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await signOut(auth);
+    window.location.href = 'index.html';
+  });
+
+  // ── API type toggle — update hints ──────────────────────
+  document.querySelectorAll('input[name="apiType"]').forEach(radio => {
+    radio.addEventListener('change', () => updateHints(radio.value));
+  });
+
+  function updateHints(type) {
+    const siHelp    = document.getElementById('si-help');
+    const cloudHelp = document.getElementById('cloud-help');
+    const keyHint   = document.getElementById('key-hint');
+
+    if (type === 'cloud') {
+      siHelp.style.display    = 'none';
+      cloudHelp.style.display = 'block';
+      keyHint.textContent     = 'Settings → Integration → Developer → API Keys';
+    } else {
+      siHelp.style.display    = 'block';
+      cloudHelp.style.display = 'none';
+      keyHint.textContent     = 'SI Control Panel → Manage Integrations → API Key';
+    }
+  }
+  updateHints('si'); // default
+
+  // ── Show/hide API key ────────────────────────────────────
+  document.getElementById('key-toggle').addEventListener('click', () => {
+    const input = document.getElementById('api-key');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  });
+
+  // ── Save form ────────────────────────────────────────────
+  document.getElementById('setup-form').addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const errorEl   = document.getElementById('setup-error');
+    const successEl = document.getElementById('setup-success');
+    const btn       = document.getElementById('save-btn');
+
+    errorEl.textContent   = '';
+    successEl.textContent = '';
+
+    const apiType = document.querySelector('input[name="apiType"]:checked').value;
+    const apiKey  = document.getElementById('api-key').value.trim();
+
+    if (!apiKey) {
+      errorEl.textContent = 'Please enter your API key.';
+      return;
+    }
+
+    btn.disabled    = true;
+    btn.textContent = 'Saving…';
+
+    try {
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        apiType,
+        apiKey,
+        updatedAt: new Date().toISOString()
+      });
+
+      successEl.textContent = 'Configuration saved. Redirecting to your report…';
+      setTimeout(() => { window.location.href = 'app.html'; }, 1200);
+
+    } catch (err) {
+      btn.disabled    = false;
+      btn.textContent = 'Save & Continue';
+      errorEl.textContent = 'Failed to save: ' + err.message;
+    }
+  });
+</script>
+
+</body>
+</html>
