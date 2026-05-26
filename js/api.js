@@ -27,6 +27,9 @@ class DToolsAPI {
     this.apiKey    = config.apiKey    || '';
     this.workerUrl = config.workerUrl || '';
     this.useMock   = config.useMock   || false;
+    // coCache: { read(coIds[]) → Map<id,date>, write(id, date) → void }
+    // Cloud-only — locks in the first-seen modifiedDate when state=Approved
+    this.coCache   = config.coCache   || null;
   }
 
   // ──────────────────────────────────────────────────────────
@@ -161,17 +164,20 @@ class DToolsAPI {
     // So Project.createdDate is the most reliable proxy for "estimate accepted date".
     // Change Orders live under Projects and have their own Approved state.
     //
+    // D-Tools Cloud does not expose a dedicated CO approval date — only modifiedDate.
+    // To prevent post-approval edits shifting a CO into the wrong month, we cache the
+    // first-seen modifiedDate for each CO when state=Approved. Subsequent searches
+    // use the cached date, ignoring any later modifications.
+    //
     // Workflow:
     //   1. GET /api/v1/Projects/GetProjects (fromCreatedDate/toCreatedDate)
     //      → projects created in range = estimates accepted in range
-    //      → clientName is on ProjectLite — no extra lookup needed
     //
     //   2. GET /api/v1/Projects/GetProjects (fromModifiedDate/toModifiedDate)
-    //      → projects active in range (likely have COs approved in range)
+    //      → projects active in range (may have COs approved in range)
     //
     //   3. GET /api/v1/ChangeOrders/GetChangeOrders?projectId={id}
-    //      → for each active project, fetch COs and filter by state=Approved
-    //        and modifiedDate (best proxy for CO approval date) within range
+    //      → fetch ALL approved COs, then resolve canonical date via cache
 
     const start    = new Date(startDate + 'T00:00:00Z');
     const end      = new Date(endDate   + 'T23:59:59Z');
@@ -203,9 +209,9 @@ class DToolsAPI {
       approvalDate:      p.createdDate || ''
     }));
 
-    // ── Step 2: Change Orders — projects modified in date range
+    // ── Step 2: Projects modified in date range ───────────────
     // A project's modifiedDate updates when a CO is approved,
-    // so filtering by modifiedDate catches projects with recent CO activity.
+    // so this catches projects with recent CO activity.
     const activeProjects = await this._callWorker({
       apiType:  'cloud',
       endpoint: '/api/v1/Projects/GetProjects',
@@ -219,9 +225,10 @@ class DToolsAPI {
 
     const coProjects = Array.isArray(activeProjects) ? activeProjects : [];
 
-    // ── Step 3: Fetch COs per active project in batches of 10 ─
-    const BATCH_SIZE = 10;
-    const coRecords  = [];
+    // ── Step 3: Fetch ALL approved COs (no date filter yet) ──
+    // Collect first, then resolve canonical dates via cache before filtering.
+    const BATCH_SIZE  = 10;
+    const allApproved = []; // [{ co, project }]
 
     for (let i = 0; i < coProjects.length; i += BATCH_SIZE) {
       const batch = coProjects.slice(i, i + BATCH_SIZE);
@@ -235,28 +242,66 @@ class DToolsAPI {
           }).then(cos => {
             const coList = Array.isArray(cos) ? cos : [];
             return coList
-              .filter(co => {
-                if (co.state !== 'Approved') return false;
-                const d = new Date(co.modifiedDate);
-                return d >= start && d <= end;
-              })
-              .map(co => ({
-                id:                co.id,
-                clientName:        project.clientName || '',
-                name:              co.name            || '',
-                projectNumber:     project.number     || '',
-                type:              'change_order',
-                changeOrderNumber: co.number          || null,
-                totalPrice:        parseFloat(co.price) || 0,
-                approvalDate:      co.modifiedDate    || ''
-              }));
+              .filter(co => co.state === 'Approved')
+              .map(co => ({ co, project }));
           }).catch(() => [])
         )
       );
-      coRecords.push(...batchResults.flat());
+      allApproved.push(...batchResults.flat());
     }
 
-    // Combine estimates + change orders, deduplicate by id
+    // ── Step 4: Bulk-read CO approval date cache ──────────────
+    // Returns a Map<coId, canonicalApprovalDate> for any COs
+    // whose approval date was already locked in by a prior search.
+    let cacheMap = new Map();
+    if (this.coCache && allApproved.length > 0) {
+      const coIds = allApproved.map(({ co }) => co.id);
+      cacheMap = await this.coCache.read(coIds);
+    }
+
+    // ── Step 5: Resolve canonical date, filter, collect writes ─
+    const newCacheEntries = new Map();
+    const coRecords       = [];
+
+    for (const { co, project } of allApproved) {
+      let approvalDate;
+
+      if (cacheMap.has(co.id)) {
+        // Previously seen — use the locked-in approval date
+        approvalDate = cacheMap.get(co.id);
+      } else {
+        // First time seeing this CO as Approved — lock in modifiedDate now
+        approvalDate = co.modifiedDate || '';
+        if (approvalDate) newCacheEntries.set(co.id, approvalDate);
+      }
+
+      // Filter by canonical date
+      if (!approvalDate) continue;
+      const d = new Date(approvalDate);
+      if (d < start || d > end) continue;
+
+      coRecords.push({
+        id:                co.id,
+        clientName:        project.clientName || '',
+        name:              co.name            || '',
+        projectNumber:     project.number     || '',
+        type:              'change_order',
+        changeOrderNumber: co.number          || null,
+        totalPrice:        parseFloat(co.price) || 0,
+        approvalDate
+      });
+    }
+
+    // ── Step 6: Write new cache entries to Firestore ──────────
+    if (this.coCache && newCacheEntries.size > 0) {
+      await Promise.all(
+        Array.from(newCacheEntries.entries()).map(([id, date]) =>
+          this.coCache.write(id, date)
+        )
+      );
+    }
+
+    // ── Step 7: Combine estimates + COs, deduplicate by id ───
     const seen = new Set();
     return [...estimateRecords, ...coRecords].filter(r => {
       if (seen.has(r.id)) return false;
