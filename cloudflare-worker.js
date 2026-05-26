@@ -29,7 +29,7 @@ const ALLOWED_ORIGINS = [
 
 // ── D-Tools API base URLs ────────────────────────────────────
 const SI_BASE_URL    = 'https://api.d-tools.com';
-const CLOUD_BASE_URL = 'https://api.d-tools.cloud'; // ← Confirm when Cloud API access is granted
+const CLOUD_BASE_URL = 'https://dtcloudapi.d-tools.cloud';
 
 // ── Cloudflare Worker entry point ───────────────────────────
 addEventListener('fetch', event => {

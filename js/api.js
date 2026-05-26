@@ -66,33 +66,23 @@ class DToolsAPI {
         const start = new Date(startDate + 'T00:00:00Z');
         const end   = new Date(endDate   + 'T23:59:59Z');
 
-        // Get the appropriate raw mock data for the configured API type
-        const response = this.apiType === 'cloud'
-          ? getMockCloudResponse()
-          : getMockSIResponse();
-
-        const items = this.apiType === 'cloud'
-          ? response.items
-          : response.Items;
+        const response = getMockSIResponse();
+        const items    = response.Items;
 
         const filtered = items.filter(item => {
-          const approvedStatus = this.apiType === 'cloud' ? 'Accepted' : 'Approved';
-          const dateField      = this.apiType === 'cloud'
-            ? item.statusChangedDate
-            : item.ProgressChangedDate;
-
-          const status       = this.apiType === 'cloud' ? item.status : item.Progress;
-          const changedDate  = new Date(dateField);
-
+          const isChangeOrder = item.IsChangeOrder || false;
+          const dateStr       = isChangeOrder ? item.COAcceptedOn : item.ProgressChangedDate;
+          if (!dateStr) return false;
+          const changedDate = new Date(dateStr);
           return (
-            status === approvedStatus &&
+            item.Progress === 'Approved' &&
             changedDate >= start &&
             changedDate <= end
           );
         });
 
-        resolve(filtered.map(item => this._normalise(item)));
-      }, 800); // simulated network delay
+        resolve(filtered.map(item => this._normaliseSI(item)));
+      }, 800);
     });
   }
 
@@ -101,34 +91,36 @@ class DToolsAPI {
   // ──────────────────────────────────────────────────────────
 
   async _siGetApprovedEstimates(startDate, endDate) {
-    // SI API returns ALL projects with status "Approved".
-    // We filter by ProgressChangedDate client-side because the
-    // SI API does not support date-range filtering on status change.
+    // Confirmed field names from D-Tools SI API (api.d-tools.com/si/doc):
+    //   Progress            → project status ("Approved")
+    //   ProgressChangedDate → date the Progress status last changed (estimates)
+    //   COAcceptedOn        → date a change order was accepted (change orders)
+    //   Client              → client name
+    //   Price               → sell total (excluding tax)
+    //   Number              → project number
+    //   IsChangeOrder       → boolean — true when record is a change order
+    //   CONumber            → change order number
+    //   COName              → change order name
     //
-    // NOTE: Exact field names to be verified against live API.
-    // Key assumed field names:
-    //   Progress            → project status
-    //   ProgressChangedDate → date status last changed
-    //   TotalPrice          → sell total
-    //   ClientName          → client name
-    //   IsChangeOrder       → boolean
-    //   ChangeOrderNumber   → CO number or null
+    // The SI API returns ALL projects with Progress="Approved" in one paginated
+    // list. Both estimates and change orders appear here (distinguished by
+    // IsChangeOrder). We filter client-side by the appropriate date field.
 
     const start = new Date(startDate + 'T00:00:00Z');
     const end   = new Date(endDate   + 'T23:59:59Z');
 
-    let allItems = [];
+    let allItems  = [];
     let pageNumber = 1;
     const pageSize = 200;
 
-    // Paginate through all Approved projects
+    // Paginate through all Approved projects + change orders
     while (true) {
       const response = await this._callWorker({
         apiType:  'si',
         endpoint: '/SI/Subscribe/Projects',
         method:   'GET',
         params: {
-          progresses: ['Approved'],
+          progresses:      ['Approved'],
           includeArchived: false,
           includeDeleted:  false,
           pageNumber,
@@ -139,18 +131,22 @@ class DToolsAPI {
       const items = response.Items || [];
       allItems = allItems.concat(items);
 
-      // Stop if we've received all pages
       if (items.length < pageSize) break;
       pageNumber++;
     }
 
-    // Filter by status change date falling within the requested range
+    // Filter by the appropriate date field:
+    //   - Estimates:     ProgressChangedDate (when project moved to Approved)
+    //   - Change orders: COAcceptedOn        (when CO was accepted)
     const filtered = allItems.filter(item => {
-      const changedDate = new Date(item.ProgressChangedDate);
+      const isChangeOrder = item.IsChangeOrder || false;
+      const dateStr       = isChangeOrder ? item.COAcceptedOn : item.ProgressChangedDate;
+      if (!dateStr) return false;
+      const changedDate = new Date(dateStr);
       return changedDate >= start && changedDate <= end;
     });
 
-    return filtered.map(item => this._normalise(item));
+    return filtered.map(item => this._normaliseSI(item));
   }
 
   // ──────────────────────────────────────────────────────────
@@ -158,73 +154,113 @@ class DToolsAPI {
   // ──────────────────────────────────────────────────────────
 
   async _cloudGetApprovedEstimates(startDate, endDate) {
-    // Cloud uses "Accepted" status and slightly different field names.
-    // NOTE: Cloud API base URL and exact endpoint paths to be confirmed.
-    // Reference: https://docs.d-tools.cloud/en/articles/8756121-api-endpoints
+    // Confirmed from D-Tools Cloud Swagger:
+    // https://dtcloudapi.d-tools.cloud/apidocs/index.html
+    //
+    // Workflow (optimised for any volume of quotes):
+    //   1. Fetch GetQuotes + GetOpportunities in PARALLEL (2 simultaneous calls)
+    //   2. Filter quotes client-side: state === 'Accepted' AND acceptedDate in range
+    //   3. Fetch GetQuote detail in BATCHES OF 10 (for opportunityId → clientName)
+    //   4. Build normalised records using the pre-fetched opportunity map
+    //
+    // This means client names cost 1 call regardless of how many quotes there are,
+    // and quote details are processed 10 at a time (not all at once).
+    //
+    // Note: D-Tools Cloud ChangeOrderLite has no acceptedDate field, so change
+    // orders cannot be filtered by acceptance date via the Cloud API. Only Quotes
+    // (estimates) are returned.
 
     const start = new Date(startDate + 'T00:00:00Z');
     const end   = new Date(endDate   + 'T23:59:59Z');
 
-    let allItems = [];
-    let pageNumber = 1;
-    const pageSize = 200;
-
-    while (true) {
-      const response = await this._callWorker({
+    // ── Step 1: Fetch quotes + opportunities simultaneously ──
+    const [allQuotes, allOpportunities] = await Promise.all([
+      this._callWorker({
         apiType:  'cloud',
-        endpoint: '/projects',            // ← Confirm exact path from Cloud API docs
+        endpoint: '/api/v1/Quotes/GetQuotes',
         method:   'GET',
-        params: {
-          status:     'Accepted',
-          pageNumber,
-          pageSize
-        }
-      });
+        params:   {}
+      }),
+      this._callWorker({
+        apiType:  'cloud',
+        endpoint: '/api/v1/Opportunities/GetOpportunities',
+        method:   'GET',
+        params:   {}
+      })
+    ]);
 
-      const items = response.items || [];
-      allItems = allItems.concat(items);
+    const quotes = Array.isArray(allQuotes)        ? allQuotes        : [];
+    const opps   = Array.isArray(allOpportunities) ? allOpportunities : [];
 
-      if (items.length < pageSize) break;
-      pageNumber++;
-    }
+    // Build opportunity map: opportunityId → clientName
+    // (OpportunityLite includes clientName — no extra calls needed)
+    const oppMap = {};
+    opps.forEach(o => { oppMap[o.id] = o.clientName || ''; });
 
-    const filtered = allItems.filter(item => {
-      const changedDate = new Date(item.statusChangedDate);
-      return changedDate >= start && changedDate <= end;
+    // ── Step 2: Filter — Accepted and within date range ──────
+    const accepted = quotes.filter(q => {
+      if (q.state !== 'Accepted' || !q.acceptedDate) return false;
+      const d = new Date(q.acceptedDate);
+      return d >= start && d <= end;
     });
 
-    return filtered.map(item => this._normalise(item));
+    if (accepted.length === 0) return [];
+
+    // ── Step 3: Fetch QuoteDetail in batches of 10 ───────────
+    // QuoteLite does not include opportunityId — QuoteDetail does.
+    const BATCH_SIZE = 10;
+    const details    = [];
+
+    for (let i = 0; i < accepted.length; i += BATCH_SIZE) {
+      const batch   = accepted.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(q =>
+          this._callWorker({
+            apiType:  'cloud',
+            endpoint: '/api/v1/Quotes/GetQuote',
+            method:   'GET',
+            params:   { id: q.id }
+          })
+        )
+      );
+      details.push(...results);
+    }
+
+    // ── Step 4: Build normalised records ─────────────────────
+    return details.map(qd => ({
+      id:                qd.id,
+      clientName:        oppMap[qd.opportunityId] || '',
+      name:              qd.name        || '',
+      projectNumber:     qd.number      || '',
+      type:              'estimate',
+      changeOrderNumber: null,
+      totalPrice:        parseFloat(qd.price) || 0,
+      approvalDate:      qd.acceptedDate || ''
+    }));
   }
 
   // ──────────────────────────────────────────────────────────
-  //  NORMALISE (converts either API shape to a common object)
+  //  NORMALISE — SI
+  //  Converts SI Subscribe/Projects response to common shape.
+  //  Field names confirmed from api.d-tools.com/si/doc
   // ──────────────────────────────────────────────────────────
 
-  _normalise(item) {
-    if (this.apiType === 'cloud') {
-      return {
-        id:                item.id,
-        clientName:        item.customerName || item.clientName || '',
-        name:              item.name || '',
-        projectNumber:     item.projectNumber || '',
-        type:              item.isChangeOrder ? 'change_order' : 'estimate',
-        changeOrderNumber: item.changeOrderNumber || null,
-        totalPrice:        parseFloat(item.totalAmount) || 0,
-        approvalDate:      item.statusChangedDate || ''
-      };
-    } else {
-      // SI (also used for mock SI data)
-      return {
-        id:                item.Id,
-        clientName:        item.ClientName || '',
-        name:              item.Name || '',
-        projectNumber:     item.ProjectNumber || '',
-        type:              item.IsChangeOrder ? 'change_order' : 'estimate',
-        changeOrderNumber: item.ChangeOrderNumber || null,
-        totalPrice:        parseFloat(item.TotalPrice) || 0,
-        approvalDate:      item.ProgressChangedDate || ''
-      };
-    }
+  _normaliseSI(item) {
+    const isChangeOrder = item.IsChangeOrder || false;
+    return {
+      id:                item.Id,
+      clientName:        item.Client      || item.ClientName || '',
+      name:              isChangeOrder
+                           ? (item.COName || item.Name || '')
+                           : (item.Name   || ''),
+      projectNumber:     item.Number      || item.ProjectNumber || '',
+      type:              isChangeOrder ? 'change_order' : 'estimate',
+      changeOrderNumber: item.CONumber    || item.ChangeOrderNumber || null,
+      totalPrice:        parseFloat(item.Price || item.TotalPrice) || 0,
+      approvalDate:      isChangeOrder
+                           ? (item.COAcceptedOn        || '')
+                           : (item.ProgressChangedDate || '')
+    };
   }
 
   // ──────────────────────────────────────────────────────────
@@ -232,14 +268,12 @@ class DToolsAPI {
   // ──────────────────────────────────────────────────────────
 
   async _callWorker(payload) {
-    // Passes the request to the Cloudflare Worker, which adds
-    // the correct auth header and forwards to D-Tools.
     payload.apiKey = this.apiKey;
 
     const response = await fetch(this.workerUrl + '/proxy', {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body:    JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -255,20 +289,6 @@ class DToolsAPI {
 //  RESULT GROUPING HELPERS
 // ──────────────────────────────────────────────────────────
 
-/**
- * Groups an array of normalised records by clientName (A–Z),
- * then sorts each client's records by approvalDate ascending.
- *
- * Returns:
- * [
- *   {
- *     clientName: "Anderson Residence",
- *     records: [ ...NormalisedRecord ],
- *     subtotal: 53700
- *   },
- *   ...
- * ]
- */
 function groupByClient(records) {
   const map = {};
 
@@ -280,24 +300,17 @@ function groupByClient(records) {
     map[r.clientName].subtotal += r.totalPrice;
   });
 
-  // Sort each client's records by approval date ascending
   Object.values(map).forEach(group => {
     group.records.sort((a, b) =>
       new Date(a.approvalDate) - new Date(b.approvalDate)
     );
   });
 
-  // Sort clients alphabetically
   return Object.values(map).sort((a, b) =>
     a.clientName.localeCompare(b.clientName)
   );
 }
 
-/**
- * Calculates the grand total across all groups.
- * @param {Array} groups  Result of groupByClient()
- * @returns {number}
- */
 function grandTotal(groups) {
   return groups.reduce((sum, g) => sum + g.subtotal, 0);
 }
@@ -318,9 +331,9 @@ function formatDate(isoString) {
   if (!isoString) return '—';
   const d = new Date(isoString);
   return d.toLocaleDateString('en-US', {
-    year:  'numeric',
-    month: 'short',
-    day:   'numeric',
+    year:     'numeric',
+    month:    'short',
+    day:      'numeric',
     timeZone: 'UTC'
   });
 }
