@@ -18,7 +18,7 @@ const APP_CONFIG = {
   workerUrl: "https://dtools-proxy.gaskew44.workers.dev",
 
   // Mock mode: true = use test data, false = use real D-Tools API
-  useMock: true,
+  useMock: false,
 
   // App identity
   appName:     "D-Tools Report",
