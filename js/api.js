@@ -185,20 +185,32 @@ class DToolsAPI {
     const isoEnd   = endDate   + 'T23:59:59Z';
 
     // ── Step 1: Estimates — projects created in date range ───
-    const newProjects = await this._callWorker({
-      apiType:  'cloud',
-      endpoint: '/api/v1/Projects/GetProjects',
-      method:   'GET',
-      params: {
-        fromCreatedDate: isoStart,
-        toCreatedDate:   isoEnd,
-        includeArchived: false
+    // Paginate in case many projects were created in the period.
+    let estimateProjects = [];
+    {
+      let page = 1;
+      const PAGE_SIZE = 100;
+      while (true) {
+        const res = await this._callWorker({
+          apiType:  'cloud',
+          endpoint: '/api/v1/Projects/GetProjects',
+          method:   'GET',
+          params: {
+            fromCreatedDate: isoStart,
+            toCreatedDate:   isoEnd,
+            includeArchived: false,
+            page,
+            pageSize: PAGE_SIZE
+          }
+        });
+        const pageData = Array.isArray(res)
+          ? res
+          : (Array.isArray(res?.projects) ? res.projects : []);
+        estimateProjects = estimateProjects.concat(pageData);
+        if (pageData.length < PAGE_SIZE) break;
+        page++;
       }
-    });
-
-    const estimateProjects = Array.isArray(newProjects)
-      ? newProjects
-      : (Array.isArray(newProjects?.projects) ? newProjects.projects : []);
+    }
 
     const estimateRecords = estimateProjects.map(p => ({
       id:                p.id,
@@ -211,24 +223,36 @@ class DToolsAPI {
       approvalDate:      p.createdDate || ''
     }));
 
-    // ── Step 2: ALL active projects ───────────────────────────
+    // ── Step 2: ALL active projects (paginated) ───────────────
     // We cannot filter by modifiedDate here because D-Tools Cloud
     // does not reliably update a project's modifiedDate when one of
     // its change orders is approved. Fetching all non-archived projects
     // ensures no approved COs are missed; date filtering happens at
     // the CO level in Step 5 using the cached canonical approval date.
-    const allProjects = await this._callWorker({
-      apiType:  'cloud',
-      endpoint: '/api/v1/Projects/GetProjects',
-      method:   'GET',
-      params: {
-        includeArchived: false
+    // Default pageSize is 20 — must paginate to get everything.
+    let coProjects = [];
+    {
+      let page = 1;
+      const PAGE_SIZE = 100;
+      while (true) {
+        const res = await this._callWorker({
+          apiType:  'cloud',
+          endpoint: '/api/v1/Projects/GetProjects',
+          method:   'GET',
+          params: {
+            includeArchived: false,
+            page,
+            pageSize: PAGE_SIZE
+          }
+        });
+        const pageData = Array.isArray(res)
+          ? res
+          : (Array.isArray(res?.projects) ? res.projects : []);
+        coProjects = coProjects.concat(pageData);
+        if (pageData.length < PAGE_SIZE) break;
+        page++;
       }
-    });
-
-    const coProjects = Array.isArray(allProjects)
-      ? allProjects
-      : (Array.isArray(allProjects?.projects) ? allProjects.projects : []);
+    }
 
     // ── Step 3: Fetch ALL approved COs (no date filter yet) ──
     // Collect first, then resolve canonical dates via cache before filtering.
