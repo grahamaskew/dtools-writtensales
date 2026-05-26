@@ -85,7 +85,10 @@ async function handleRequest(request) {
   if (apiType === 'si') {
     dtoolsHeaders['X-DTSI-ApiKey'] = apiKey;
   } else {
-    dtoolsHeaders['X-API-Key'] = apiKey;
+    // D-Tools Cloud requires both a fixed Basic auth header AND the user's API key.
+    // The Basic value is the same for all Cloud users (see docs.d-tools.cloud/authentication).
+    dtoolsHeaders['Authorization'] = 'Basic RFRDbG91ZEFQSVVzZXI6MyNRdVkrMkR1QCV3Kk15JTU8Yi1aZzlV';
+    dtoolsHeaders['X-API-Key']     = apiKey;
   }
 
   // ── Forward request to D-Tools ────────────────────────────

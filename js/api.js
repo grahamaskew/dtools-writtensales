@@ -173,60 +173,61 @@ class DToolsAPI {
     const start = new Date(startDate + 'T00:00:00Z');
     const end   = new Date(endDate   + 'T23:59:59Z');
 
-    // ── Step 1: Fetch all quotes ─────────────────────────────
-    // (Diagnostic: single call first to confirm GetQuotes works,
-    //  GetOpportunities will be added back once GetQuotes is verified)
-    const allQuotes = await this._callWorker({
+    // ── Step 1: Fetch all opportunities ─────────────────────
+    // GetQuotes requires opportunityId — can't be called without one.
+    // GetOpportunities returns OpportunityLite which includes clientName,
+    // so no extra detail calls are needed.
+    const allOpportunities = await this._callWorker({
       apiType:  'cloud',
-      endpoint: '/api/v1/Quotes/GetQuotes',
+      endpoint: '/api/v1/Opportunities/GetOpportunities',
       method:   'GET',
       params:   {}
     });
 
-    const quotes = Array.isArray(allQuotes) ? allQuotes : [];
+    const opps = Array.isArray(allOpportunities) ? allOpportunities : [];
+    if (opps.length === 0) return [];
 
-    // Client names will be populated once GetQuotes is confirmed working
-    const oppMap = {};
+    // ── Step 2: Fetch quotes per opportunity in batches of 10 ─
+    const BATCH_SIZE = 10;
+    const allQuotes  = [];
 
-    // ── Step 2: Filter — Accepted and within date range ──────
-    const accepted = quotes.filter(q => {
+    for (let i = 0; i < opps.length; i += BATCH_SIZE) {
+      const batch = opps.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(opp =>
+          this._callWorker({
+            apiType:  'cloud',
+            endpoint: '/api/v1/Quotes/GetQuotes',
+            method:   'GET',
+            params:   { opportunityId: opp.id }
+          }).then(quotes =>
+            (Array.isArray(quotes) ? quotes : []).map(q => ({
+              ...q,
+              _clientName: opp.clientName || ''
+            }))
+          ).catch(() => [])
+        )
+      );
+      allQuotes.push(...batchResults.flat());
+    }
+
+    // ── Step 3: Filter — Accepted and within date range ──────
+    const accepted = allQuotes.filter(q => {
       if (q.state !== 'Accepted' || !q.acceptedDate) return false;
       const d = new Date(q.acceptedDate);
       return d >= start && d <= end;
     });
 
-    if (accepted.length === 0) return [];
-
-    // ── Step 3: Fetch QuoteDetail in batches of 10 ───────────
-    // QuoteLite does not include opportunityId — QuoteDetail does.
-    const BATCH_SIZE = 10;
-    const details    = [];
-
-    for (let i = 0; i < accepted.length; i += BATCH_SIZE) {
-      const batch   = accepted.slice(i, i + BATCH_SIZE);
-      const results = await Promise.all(
-        batch.map(q =>
-          this._callWorker({
-            apiType:  'cloud',
-            endpoint: '/api/v1/Quotes/GetQuote',
-            method:   'GET',
-            params:   { id: q.id }
-          })
-        )
-      );
-      details.push(...results);
-    }
-
     // ── Step 4: Build normalised records ─────────────────────
-    return details.map(qd => ({
-      id:                qd.id,
-      clientName:        oppMap[qd.opportunityId] || '',
-      name:              qd.name        || '',
-      projectNumber:     qd.number      || '',
+    return accepted.map(q => ({
+      id:                q.id,
+      clientName:        q._clientName   || '',
+      name:              q.name          || '',
+      projectNumber:     q.number        || '',
       type:              'estimate',
       changeOrderNumber: null,
-      totalPrice:        parseFloat(qd.price) || 0,
-      approvalDate:      qd.acceptedDate || ''
+      totalPrice:        parseFloat(q.price) || 0,
+      approvalDate:      q.acceptedDate  || ''
     }));
   }
 
