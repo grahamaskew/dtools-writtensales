@@ -270,11 +270,10 @@ class DToolsAPI {
             params:   { projectId: project.id }
           }).then(cos => {
             const coList = Array.isArray(cos) ? cos : (Array.isArray(cos?.changeOrders) ? cos.changeOrders : []);
-            coList.forEach(co => console.log('[CO DEBUG]', project.name, '|', co.name, '| state:', co.state, '| modifiedDate:', co.modifiedDate));
             return coList
               .filter(co => co.state === 'Approved' || co.state === 'Accepted')
               .map(co => ({ co, project }));
-          }).catch(err => { console.warn('[CO ERROR]', project.name, project.id, err.message); return []; })
+          }).catch(() => [])
         )
       );
       allApproved.push(...batchResults.flat());
@@ -431,11 +430,13 @@ function formatCurrency(value) {
 
 function formatDate(isoString) {
   if (!isoString) return '—';
+  // D-Tools Cloud returns timestamps without a timezone suffix (local time).
+  // D-Tools SI returns UTC timestamps. Display in the browser's local timezone
+  // so dates always match what the user sees in their D-Tools interface.
   const d = new Date(isoString);
   return d.toLocaleDateString('en-US', {
-    year:     'numeric',
-    month:    'short',
-    day:      'numeric',
-    timeZone: 'UTC'
+    year:  'numeric',
+    month: 'short',
+    day:   'numeric'
   });
 }
