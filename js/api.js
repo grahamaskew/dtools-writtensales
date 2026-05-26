@@ -154,81 +154,115 @@ class DToolsAPI {
   // ──────────────────────────────────────────────────────────
 
   async _cloudGetApprovedEstimates(startDate, endDate) {
-    // Confirmed from D-Tools Cloud Swagger:
+    // D-Tools Cloud API — confirmed from Swagger at:
     // https://dtcloudapi.d-tools.cloud/apidocs/index.html
     //
-    // Workflow (optimised for any volume of quotes):
-    //   1. Fetch GetQuotes + GetOpportunities in PARALLEL (2 simultaneous calls)
-    //   2. Filter quotes client-side: state === 'Accepted' AND acceptedDate in range
-    //   3. Fetch GetQuote detail in BATCHES OF 10 (for opportunityId → clientName)
-    //   4. Build normalised records using the pre-fetched opportunity map
+    // In D-Tools Cloud, accepting a Quote creates a Project.
+    // So Project.createdDate is the most reliable proxy for "estimate accepted date".
+    // Change Orders live under Projects and have their own Approved state.
     //
-    // This means client names cost 1 call regardless of how many quotes there are,
-    // and quote details are processed 10 at a time (not all at once).
+    // Workflow:
+    //   1. GET /api/v1/Projects/GetProjects (fromCreatedDate/toCreatedDate)
+    //      → projects created in range = estimates accepted in range
+    //      → clientName is on ProjectLite — no extra lookup needed
     //
-    // Note: D-Tools Cloud ChangeOrderLite has no acceptedDate field, so change
-    // orders cannot be filtered by acceptance date via the Cloud API. Only Quotes
-    // (estimates) are returned.
+    //   2. GET /api/v1/Projects/GetProjects (fromModifiedDate/toModifiedDate)
+    //      → projects active in range (likely have COs approved in range)
+    //
+    //   3. GET /api/v1/ChangeOrders/GetChangeOrders?projectId={id}
+    //      → for each active project, fetch COs and filter by state=Approved
+    //        and modifiedDate (best proxy for CO approval date) within range
 
-    const start = new Date(startDate + 'T00:00:00Z');
-    const end   = new Date(endDate   + 'T23:59:59Z');
+    const start    = new Date(startDate + 'T00:00:00Z');
+    const end      = new Date(endDate   + 'T23:59:59Z');
+    const isoStart = startDate + 'T00:00:00Z';
+    const isoEnd   = endDate   + 'T23:59:59Z';
 
-    // ── Step 1: Fetch all opportunities ─────────────────────
-    // GetQuotes requires opportunityId — can't be called without one.
-    // GetOpportunities returns OpportunityLite which includes clientName,
-    // so no extra detail calls are needed.
-    const allOpportunities = await this._callWorker({
+    // ── Step 1: Estimates — projects created in date range ───
+    const newProjects = await this._callWorker({
       apiType:  'cloud',
-      endpoint: '/api/v1/Opportunities/GetOpportunities',
+      endpoint: '/api/v1/Projects/GetProjects',
       method:   'GET',
-      params:   {}
+      params: {
+        fromCreatedDate: isoStart,
+        toCreatedDate:   isoEnd,
+        includeArchived: false
+      }
     });
 
-    const opps = Array.isArray(allOpportunities) ? allOpportunities : [];
-    if (opps.length === 0) return [];
+    const estimateProjects = Array.isArray(newProjects) ? newProjects : [];
 
-    // ── Step 2: Fetch quotes per opportunity in batches of 10 ─
-    const BATCH_SIZE = 10;
-    const allQuotes  = [];
-
-    for (let i = 0; i < opps.length; i += BATCH_SIZE) {
-      const batch = opps.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(
-        batch.map(opp =>
-          this._callWorker({
-            apiType:  'cloud',
-            endpoint: '/api/v1/Quotes/GetQuotes',
-            method:   'GET',
-            params:   { opportunityId: opp.id }
-          }).then(quotes =>
-            (Array.isArray(quotes) ? quotes : []).map(q => ({
-              ...q,
-              _clientName: opp.clientName || ''
-            }))
-          ).catch(() => [])
-        )
-      );
-      allQuotes.push(...batchResults.flat());
-    }
-
-    // ── Step 3: Filter — Accepted and within date range ──────
-    const accepted = allQuotes.filter(q => {
-      if (q.state !== 'Accepted' || !q.acceptedDate) return false;
-      const d = new Date(q.acceptedDate);
-      return d >= start && d <= end;
-    });
-
-    // ── Step 4: Build normalised records ─────────────────────
-    return accepted.map(q => ({
-      id:                q.id,
-      clientName:        q._clientName   || '',
-      name:              q.name          || '',
-      projectNumber:     q.number        || '',
+    const estimateRecords = estimateProjects.map(p => ({
+      id:                p.id,
+      clientName:        p.clientName || '',
+      name:              p.name       || '',
+      projectNumber:     p.number     || '',
       type:              'estimate',
       changeOrderNumber: null,
-      totalPrice:        parseFloat(q.price) || 0,
-      approvalDate:      q.acceptedDate  || ''
+      totalPrice:        parseFloat(p.price) || 0,
+      approvalDate:      p.createdDate || ''
     }));
+
+    // ── Step 2: Change Orders — projects modified in date range
+    // A project's modifiedDate updates when a CO is approved,
+    // so filtering by modifiedDate catches projects with recent CO activity.
+    const activeProjects = await this._callWorker({
+      apiType:  'cloud',
+      endpoint: '/api/v1/Projects/GetProjects',
+      method:   'GET',
+      params: {
+        fromModifiedDate: isoStart,
+        toModifiedDate:   isoEnd,
+        includeArchived:  false
+      }
+    });
+
+    const coProjects = Array.isArray(activeProjects) ? activeProjects : [];
+
+    // ── Step 3: Fetch COs per active project in batches of 10 ─
+    const BATCH_SIZE = 10;
+    const coRecords  = [];
+
+    for (let i = 0; i < coProjects.length; i += BATCH_SIZE) {
+      const batch = coProjects.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(project =>
+          this._callWorker({
+            apiType:  'cloud',
+            endpoint: '/api/v1/ChangeOrders/GetChangeOrders',
+            method:   'GET',
+            params:   { projectId: project.id }
+          }).then(cos => {
+            const coList = Array.isArray(cos) ? cos : [];
+            return coList
+              .filter(co => {
+                if (co.state !== 'Approved') return false;
+                const d = new Date(co.modifiedDate);
+                return d >= start && d <= end;
+              })
+              .map(co => ({
+                id:                co.id,
+                clientName:        project.clientName || '',
+                name:              co.name            || '',
+                projectNumber:     project.number     || '',
+                type:              'change_order',
+                changeOrderNumber: co.number          || null,
+                totalPrice:        parseFloat(co.price) || 0,
+                approvalDate:      co.modifiedDate    || ''
+              }));
+          }).catch(() => [])
+        )
+      );
+      coRecords.push(...batchResults.flat());
+    }
+
+    // Combine estimates + change orders, deduplicate by id
+    const seen = new Set();
+    return [...estimateRecords, ...coRecords].filter(r => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    });
   }
 
   // ──────────────────────────────────────────────────────────

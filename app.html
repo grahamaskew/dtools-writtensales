@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>D-Tools Report — Approved Estimates</title>
+  <title>D-Tools Report — Written Sales</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -20,7 +20,7 @@
         <img src="ga-logo.png" alt="Logo" width="60" height="60" style="object-fit:contain; flex-shrink:0;" />
         <div>
           <div class="app-title" id="header-title">D-Tools Report</div>
-          <div class="app-sub" id="header-sub">Approved Estimates</div>
+          <div class="app-sub" id="header-sub">Written Sales</div>
         </div>
       </div>
       <div class="header-right">
@@ -86,14 +86,14 @@
   <!-- KPI summary (shown after search) -->
   <div id="kpi-row" class="metric-cards" style="display:none;">
     <div class="metric-card primary">
-      <div class="mc-label">Total Approved</div>
+      <div class="mc-label">Written Sales</div>
       <div class="mc-value" id="kpi-total">$0</div>
       <div class="mc-sub" id="kpi-period">—</div>
     </div>
     <div class="metric-card">
       <div class="mc-label">Clients</div>
       <div class="mc-value" id="kpi-clients">0</div>
-      <div class="mc-sub">with approved items</div>
+      <div class="mc-sub">with written sales</div>
     </div>
     <div class="metric-card">
       <div class="mc-label">Records</div>
@@ -117,7 +117,7 @@
     <!-- Loading state -->
     <div id="state-loading" class="state-box" style="display:none;">
       <div class="spinner"></div>
-      <p>Fetching approved estimates…</p>
+      <p>Fetching written sales…</p>
     </div>
 
     <!-- No results state -->
@@ -125,8 +125,8 @@
       <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--border)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/>
       </svg>
-      <p>No approved estimates found</p>
-      <div class="state-hint" id="empty-hint">No estimates or change orders had their status changed to Approved / Accepted in this period.</div>
+      <p>No written sales found</p>
+      <div class="state-hint" id="empty-hint">No projects or change orders were written in this period.</div>
     </div>
 
     <!-- Results toolbar + table (shown when there are results) -->
@@ -164,7 +164,7 @@
               <th>Client</th>
               <th>Estimate / Change Order</th>
               <th>Type</th>
-              <th class="col-date">Approved Date</th>
+              <th class="col-date">Date Written</th>
               <th class="col-amount">Total</th>
             </tr>
           </thead>
@@ -195,7 +195,7 @@
 
   // ── Branding ─────────────────────────────────────────────
   document.getElementById('header-title').textContent = APP_CONFIG.appName    || 'D-Tools Report';
-  document.getElementById('header-sub').textContent   = APP_CONFIG.appSubtitle || 'Approved Estimates';
+  document.getElementById('header-sub').textContent   = APP_CONFIG.appSubtitle || 'Written Sales';
   document.title = APP_CONFIG.appName || 'D-Tools Report';
 
   // ── Auth guard ────────────────────────────────────────────
@@ -275,7 +275,7 @@
       if (records.length === 0) {
         showState('empty');
         document.getElementById('empty-hint').textContent =
-          `No approved estimates or change orders found between ${formatDate(startVal + 'T00:00:00Z')} and ${formatDate(endVal + 'T23:59:59Z')}.`;
+          `No written sales found between ${formatDate(startVal + 'T00:00:00Z')} and ${formatDate(endVal + 'T23:59:59Z')}.`;
         return;
       }
 
@@ -405,7 +405,7 @@
 
     // Build CSV from the results body
     const csvRows = [
-      ['Client', 'Estimate / Change Order', 'Type', 'Approved Date', 'Total']
+      ['Client', 'Estimate / Change Order', 'Type', 'Date Written', 'Total']
     ];
 
     document.querySelectorAll('#results-body tr.data-row').forEach(row => {
@@ -441,7 +441,7 @@
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `approved-estimates_${startVal}_to_${endVal}.csv`;
+    a.download = `written-sales_${startVal}_to_${endVal}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   });

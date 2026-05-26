@@ -22,7 +22,7 @@ const APP_CONFIG = {
 
   // App identity
   appName:     "D-Tools Report",
-  appSubtitle: "Approved Estimates",
+  appSubtitle: "Written Sales",
   appCategory: "Estimating Tool"
 
 };
