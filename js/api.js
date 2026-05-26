@@ -196,7 +196,9 @@ class DToolsAPI {
       }
     });
 
-    const estimateProjects = Array.isArray(newProjects) ? newProjects : [];
+    const estimateProjects = Array.isArray(newProjects)
+      ? newProjects
+      : (Array.isArray(newProjects?.projects) ? newProjects.projects : []);
 
     const estimateRecords = estimateProjects.map(p => ({
       id:                p.id,
@@ -223,7 +225,9 @@ class DToolsAPI {
       }
     });
 
-    const coProjects = Array.isArray(activeProjects) ? activeProjects : [];
+    const coProjects = Array.isArray(activeProjects)
+      ? activeProjects
+      : (Array.isArray(activeProjects?.projects) ? activeProjects.projects : []);
 
     // ── Step 3: Fetch ALL approved COs (no date filter yet) ──
     // Collect first, then resolve canonical dates via cache before filtering.
