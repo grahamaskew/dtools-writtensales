@@ -211,23 +211,24 @@ class DToolsAPI {
       approvalDate:      p.createdDate || ''
     }));
 
-    // ── Step 2: Projects modified in date range ───────────────
-    // A project's modifiedDate updates when a CO is approved,
-    // so this catches projects with recent CO activity.
-    const activeProjects = await this._callWorker({
+    // ── Step 2: ALL active projects ───────────────────────────
+    // We cannot filter by modifiedDate here because D-Tools Cloud
+    // does not reliably update a project's modifiedDate when one of
+    // its change orders is approved. Fetching all non-archived projects
+    // ensures no approved COs are missed; date filtering happens at
+    // the CO level in Step 5 using the cached canonical approval date.
+    const allProjects = await this._callWorker({
       apiType:  'cloud',
       endpoint: '/api/v1/Projects/GetProjects',
       method:   'GET',
       params: {
-        fromModifiedDate: isoStart,
-        toModifiedDate:   isoEnd,
-        includeArchived:  false
+        includeArchived: false
       }
     });
 
-    const coProjects = Array.isArray(activeProjects)
-      ? activeProjects
-      : (Array.isArray(activeProjects?.projects) ? activeProjects.projects : []);
+    const coProjects = Array.isArray(allProjects)
+      ? allProjects
+      : (Array.isArray(allProjects?.projects) ? allProjects.projects : []);
 
     // ── Step 3: Fetch ALL approved COs (no date filter yet) ──
     // Collect first, then resolve canonical dates via cache before filtering.
