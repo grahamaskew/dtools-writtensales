@@ -20,7 +20,7 @@
 
 // ── Allowed origins (update with your GitHub Pages URL) ─────
 const ALLOWED_ORIGINS = [
-  'https://YOUR-GITHUB-USERNAME.github.io',  // ← replace this
+  'https://grahamaskew.github.io',
   'http://localhost',                          // for local testing
   'http://127.0.0.1',
   'http://localhost:5500',                     // VS Code Live Server
@@ -123,8 +123,9 @@ function buildQueryString(params) {
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
+      // D-Tools expects unencoded brackets: progresses[0]=Approved
       value.forEach((v, i) => {
-        parts.push(`${encodeURIComponent(key + '[' + i + ']')}=${encodeURIComponent(v)}`);
+        parts.push(`${encodeURIComponent(key)}[${i}]=${encodeURIComponent(v)}`);
       });
     } else {
       parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);

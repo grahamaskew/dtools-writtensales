@@ -128,7 +128,7 @@ class DToolsAPI {
         endpoint: '/SI/Subscribe/Projects',
         method:   'GET',
         params: {
-          'progresses[0]': 'Approved',
+          progresses: ['Approved'],
           includeArchived: false,
           includeDeleted:  false,
           pageNumber,
