@@ -245,7 +245,8 @@ class DToolsAPI {
             method:   'GET',
             params:   { projectId: project.id }
           }).then(cos => {
-            const coList = Array.isArray(cos) ? cos : [];
+            const coList = Array.isArray(cos) ? cos : (Array.isArray(cos?.changeOrders) ? cos.changeOrders : []);
+            coList.forEach(co => console.log('[CO DEBUG]', project.name, '|', co.name, '| state:', co.state, '| modifiedDate:', co.modifiedDate));
             return coList
               .filter(co => co.state === 'Approved')
               .map(co => ({ co, project }));
@@ -280,10 +281,11 @@ class DToolsAPI {
         if (approvalDate) newCacheEntries.set(co.id, approvalDate);
       }
 
-      // Filter by canonical date
+      // Filter by canonical date using browser local timezone so that a CO
+      // approved at e.g. 9 PM Eastern (= May 27 UTC) still counts as May 26.
       if (!approvalDate) continue;
-      const d = new Date(approvalDate);
-      if (d < start || d > end) continue;
+      const approvalLocalDate = new Date(approvalDate).toLocaleDateString('en-CA'); // YYYY-MM-DD
+      if (approvalLocalDate < startDate || approvalLocalDate > endDate) continue;
 
       coRecords.push({
         id:                co.id,
