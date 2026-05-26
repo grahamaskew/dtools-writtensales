@@ -173,29 +173,20 @@ class DToolsAPI {
     const start = new Date(startDate + 'T00:00:00Z');
     const end   = new Date(endDate   + 'T23:59:59Z');
 
-    // ── Step 1: Fetch quotes + opportunities simultaneously ──
-    const [allQuotes, allOpportunities] = await Promise.all([
-      this._callWorker({
-        apiType:  'cloud',
-        endpoint: '/api/v1/Quotes/GetQuotes',
-        method:   'GET',
-        params:   {}
-      }),
-      this._callWorker({
-        apiType:  'cloud',
-        endpoint: '/api/v1/Opportunities/GetOpportunities',
-        method:   'GET',
-        params:   {}
-      })
-    ]);
+    // ── Step 1: Fetch all quotes ─────────────────────────────
+    // (Diagnostic: single call first to confirm GetQuotes works,
+    //  GetOpportunities will be added back once GetQuotes is verified)
+    const allQuotes = await this._callWorker({
+      apiType:  'cloud',
+      endpoint: '/api/v1/Quotes/GetQuotes',
+      method:   'GET',
+      params:   {}
+    });
 
-    const quotes = Array.isArray(allQuotes)        ? allQuotes        : [];
-    const opps   = Array.isArray(allOpportunities) ? allOpportunities : [];
+    const quotes = Array.isArray(allQuotes) ? allQuotes : [];
 
-    // Build opportunity map: opportunityId → clientName
-    // (OpportunityLite includes clientName — no extra calls needed)
+    // Client names will be populated once GetQuotes is confirmed working
     const oppMap = {};
-    opps.forEach(o => { oppMap[o.id] = o.clientName || ''; });
 
     // ── Step 2: Filter — Accepted and within date range ──────
     const accepted = quotes.filter(q => {
