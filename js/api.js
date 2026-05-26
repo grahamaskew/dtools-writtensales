@@ -248,9 +248,9 @@ class DToolsAPI {
             const coList = Array.isArray(cos) ? cos : (Array.isArray(cos?.changeOrders) ? cos.changeOrders : []);
             coList.forEach(co => console.log('[CO DEBUG]', project.name, '|', co.name, '| state:', co.state, '| modifiedDate:', co.modifiedDate));
             return coList
-              .filter(co => co.state === 'Approved')
+              .filter(co => co.state === 'Approved' || co.state === 'Accepted')
               .map(co => ({ co, project }));
-          }).catch(() => [])
+          }).catch(err => { console.warn('[CO ERROR]', project.name, project.id, err.message); return []; })
         )
       );
       allApproved.push(...batchResults.flat());
