@@ -17,9 +17,6 @@ const APP_CONFIG = {
   // Cloudflare Worker URL
   workerUrl: "https://dtools-proxy.gaskew44.workers.dev",
 
-  // Mock mode: true = use test data, false = use real D-Tools API
-  useMock: false,
-
   // App identity
   appName:     "D-Tools Report",
   appSubtitle: "Written Sales",

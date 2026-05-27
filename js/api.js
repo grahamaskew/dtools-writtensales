@@ -26,7 +26,6 @@ class DToolsAPI {
     this.apiType   = config.apiType   || 'si';
     this.apiKey    = config.apiKey    || '';
     this.workerUrl = config.workerUrl || '';
-    this.useMock   = config.useMock   || false;
     // coCache: { read(coIds[]) → Map<id,date>, write(id, date) → void }
     // Cloud-only — locks in the first-seen modifiedDate when state=Approved
     this.coCache   = config.coCache   || null;
@@ -46,9 +45,6 @@ class DToolsAPI {
    * @returns {Promise<NormalisedRecord[]>}
    */
   async getApprovedEstimates(startDate, endDate) {
-    if (this.useMock) {
-      return this._mockGetApprovedEstimates(startDate, endDate);
-    }
     if (this.apiType === 'si') {
       return this._siGetApprovedEstimates(startDate, endDate);
     }
@@ -56,37 +52,6 @@ class DToolsAPI {
       return this._cloudGetApprovedEstimates(startDate, endDate);
     }
     throw new Error(`Unknown apiType: ${this.apiType}`);
-  }
-
-  // ──────────────────────────────────────────────────────────
-  //  MOCK IMPLEMENTATION
-  // ──────────────────────────────────────────────────────────
-
-  _mockGetApprovedEstimates(startDate, endDate) {
-    // Simulate a short async delay so the loading state is visible
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const start = new Date(startDate + 'T00:00:00Z');
-        const end   = new Date(endDate   + 'T23:59:59Z');
-
-        const response = getMockSIResponse();
-        const items    = response.Items;
-
-        const filtered = items.filter(item => {
-          const isChangeOrder = item.IsChangeOrder || false;
-          const dateStr       = isChangeOrder ? item.COAcceptedOn : item.ProgressChangedDate;
-          if (!dateStr) return false;
-          const changedDate = new Date(dateStr);
-          return (
-            item.Progress === 'Approved' &&
-            changedDate >= start &&
-            changedDate <= end
-          );
-        });
-
-        resolve(filtered.map(item => this._normaliseSI(item)));
-      }, 800);
-    });
   }
 
   // ──────────────────────────────────────────────────────────
